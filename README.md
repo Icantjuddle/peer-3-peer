@@ -7,3 +7,5 @@ Peer to peer networking for infrastructure deficient locations and events.
 1. Simran Arora
 1. Ramya Rao
 1. Ben Judd
+
+Advised by: [Vincent Liu](http://vincen.tl/)
