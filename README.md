@@ -1,5 +1,5 @@
 # Peer-3-peer
-Peer to peer networking for infrastructure deficient locations and events.
+Peer to peer networking application for infrastructure deficient locations and events.
 
 ## Authors
 1. [David Wang](http://davidwang.org/)
