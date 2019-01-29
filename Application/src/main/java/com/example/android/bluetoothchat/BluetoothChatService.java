@@ -30,6 +30,7 @@ import com.example.android.common.logger.Log;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.UUID;
 
 /**
@@ -41,10 +42,15 @@ import java.util.UUID;
 public class BluetoothChatService {
     // Debugging
     private static final String TAG = "BluetoothChatService";
+    private static final boolean D = true;
+
 
     // Name for the SDP record when creating server socket
     private static final String NAME_SECURE = "BluetoothChatSecure";
     private static final String NAME_INSECURE = "BluetoothChatInsecure";
+
+    // Name for the SDP record when creating server socket
+    private static final String NAME = "BluetoothChatMulti";
 
     // Unique UUID for this application
     private static final UUID MY_UUID_SECURE =
@@ -61,6 +67,19 @@ public class BluetoothChatService {
     private ConnectedThread mConnectedThread;
     private int mState;
     private int mNewState;
+
+    // Added device addresses
+    private ArrayList<String> mDeviceAddresses;
+    private ArrayList<ConnectedThread> mConnThreads;
+    private ArrayList<BluetoothSocket> mSockets;
+
+    /**
+     * A bluetooth piconet can support up to 7 connections. This array holds 7 unique UUIDs.
+     * When attempting to make a connection, the UUID on the client must match one that the server
+     * is listening for. When accepting incoming connections server listens for all 7 UUIDs. 
+     * When trying to form an outgoing connection, the client tries each UUID one at a time. 
+     */
+    private ArrayList<UUID> mUuids;
 
     // Constants that indicate the current connection state
     public static final int STATE_NONE = 0;       // we're doing nothing
@@ -79,6 +98,20 @@ public class BluetoothChatService {
         mState = STATE_NONE;
         mNewState = mState;
         mHandler = handler;
+
+        //adding initialization of new variables
+        mDeviceAddresses = new ArrayList<String>();
+        mConnThreads = new ArrayList<ConnectedThread>();
+        mSockets = new ArrayList<BluetoothSocket>();
+        mUuids = new ArrayList<UUID>();
+        // 7 randomly-generated UUIDs. These must match on both server and client.
+        mUuids.add(UUID.fromString("b7746a40-c758-4868-aa19-7ac6b3475dfc"));
+        mUuids.add(UUID.fromString("2d64189d-5a2c-4511-a074-77f199fd0834"));
+        mUuids.add(UUID.fromString("e442e09a-51f3-4a7b-91cb-f638491d1412"));
+        mUuids.add(UUID.fromString("a81d6504-4536-49ee-a475-7d96d09439e4"));
+        mUuids.add(UUID.fromString("aa91eab1-d8ad-448e-abdb-95ebba4a9b55"));
+        mUuids.add(UUID.fromString("4d34da73-d0a4-4f40-ac38-917e0a9dee97"));
+        mUuids.add(UUID.fromString("5e14d4df-9c8a-4db7-81e4-c937564c86e0"));
     }
 
     /**
@@ -91,6 +124,20 @@ public class BluetoothChatService {
 
         // Give the new state to the Handler so the UI Activity can update
         mHandler.obtainMessage(Constants.MESSAGE_STATE_CHANGE, mNewState, -1).sendToTarget();
+    }
+
+    /**
+     * Set the current state of the chat connection
+     * **adding
+     * @param state  An integer defining the current connection state
+     */
+    private synchronized void setState(int state) {
+        if (D) Log.d(TAG, "setState() " + mState + " -> " + state);
+        mState = state;
+
+        // Give the new state to the Handler so the UI Activity can update
+        //TODO: fix this
+        //mHandler.obtainMessage(BluetoothChat.MESSAGE_STATE_CHANGE, state, -1).sendToTarget();
     }
 
     /**
@@ -128,6 +175,7 @@ public class BluetoothChatService {
             mInsecureAcceptThread = new AcceptThread(false);
             mInsecureAcceptThread.start();
         }
+        setState(STATE_LISTEN);
         // Update UI title
         updateUserInterfaceTitle();
     }
@@ -155,9 +203,16 @@ public class BluetoothChatService {
             mConnectedThread = null;
         }
 
-        // Start the thread to connect with the given device
-        mConnectThread = new ConnectThread(device, secure);
-        mConnectThread.start();
+         // Create a new thread and attempt to connect to each UUID one-by-one.    
+        for (int i = 0; i < 7; i++) {
+        	try {
+                mConnectThread = new ConnectThread(device, false, mUuids.get(i));
+                mConnectThread.start();
+                setState(STATE_CONNECTING);
+        	} catch (Exception e) {
+        	}
+        }
+
         // Update UI title
         updateUserInterfaceTitle();
     }
@@ -172,31 +227,33 @@ public class BluetoothChatService {
             device, final String socketType) {
         Log.d(TAG, "connected, Socket Type:" + socketType);
 
-        // Cancel the thread that completed the connection
-        if (mConnectThread != null) {
-            mConnectThread.cancel();
-            mConnectThread = null;
-        }
+        // // Cancel the thread that completed the connection
+        // if (mConnectThread != null) {
+        //     mConnectThread.cancel();
+        //     mConnectThread = null;
+        // }
 
-        // Cancel any thread currently running a connection
-        if (mConnectedThread != null) {
-            mConnectedThread.cancel();
-            mConnectedThread = null;
-        }
+        // // Cancel any thread currently running a connection
+        // if (mConnectedThread != null) {
+        //     mConnectedThread.cancel();
+        //     mConnectedThread = null;
+        // }
 
-        // Cancel the accept thread because we only want to connect to one device
-        if (mSecureAcceptThread != null) {
-            mSecureAcceptThread.cancel();
-            mSecureAcceptThread = null;
-        }
-        if (mInsecureAcceptThread != null) {
-            mInsecureAcceptThread.cancel();
-            mInsecureAcceptThread = null;
-        }
+        // // Cancel the accept thread because we only want to connect to one device
+        // if (mSecureAcceptThread != null) {
+        //     mSecureAcceptThread.cancel();
+        //     mSecureAcceptThread = null;
+        // }
+        // if (mInsecureAcceptThread != null) {
+        //     mInsecureAcceptThread.cancel();
+        //     mInsecureAcceptThread = null;
+        // }
 
         // Start the thread to manage the connection and perform transmissions
         mConnectedThread = new ConnectedThread(socket, socketType);
         mConnectedThread.start();
+         // Add each connected thread to an array
+         mConnThreads.add(mConnectedThread);
 
         // Send the name of the connected device back to the UI Activity
         Message msg = mHandler.obtainMessage(Constants.MESSAGE_DEVICE_NAME);
@@ -245,34 +302,42 @@ public class BluetoothChatService {
      * @see ConnectedThread#write(byte[])
      */
     public void write(byte[] out) {
-        // Create temporary object
-        ConnectedThread r;
-        // Synchronize a copy of the ConnectedThread
-        synchronized (this) {
-            if (mState != STATE_CONNECTED) return;
-            r = mConnectedThread;
-        }
-        // Perform the write unsynchronized
-        r.write(out);
+    	// When writing, try to write out to all connected threads 
+    	for (int i = 0; i < mConnThreads.size(); i++) {
+    		try {
+                // Create temporary object
+                ConnectedThread r;
+                // Synchronize a copy of the ConnectedThread
+                synchronized (this) {
+                    if (mState != STATE_CONNECTED) return;
+                    r = mConnThreads.get(i);
+                }
+                // Perform the write unsynchronized
+                r.write(out);
+    		} catch (Exception e) {    			
+    		}
+    	}
     }
 
     /**
      * Indicate that the connection attempt failed and notify the UI Activity.
      */
     private void connectionFailed() {
-        // Send a failure message back to the Activity
-        Message msg = mHandler.obtainMessage(Constants.MESSAGE_TOAST);
-        Bundle bundle = new Bundle();
-        bundle.putString(Constants.TOAST, "Unable to connect device");
-        msg.setData(bundle);
-        mHandler.sendMessage(msg);
+        // Commented out, because when trying to connect to all 7 UUIDs, failures will occur
+        // for each that was tried and unsuccessful, resulting in multiple failure toasts.
+        // // Send a failure message back to the Activity
+        // Message msg = mHandler.obtainMessage(Constants.MESSAGE_TOAST);
+        // Bundle bundle = new Bundle();
+        // bundle.putString(Constants.TOAST, "Unable to connect device");
+        // msg.setData(bundle);
+        // mHandler.sendMessage(msg);
 
-        mState = STATE_NONE;
-        // Update UI title
-        updateUserInterfaceTitle();
+        // mState = STATE_NONE;
+        // // Update UI title
+        // updateUserInterfaceTitle();
 
-        // Start the service over to restart listening mode
-        BluetoothChatService.this.start();
+        // // Start the service over to restart listening mode
+        // BluetoothChatService.this.start();
     }
 
     /**
@@ -291,7 +356,8 @@ public class BluetoothChatService {
         updateUserInterfaceTitle();
 
         // Start the service over to restart listening mode
-        BluetoothChatService.this.start();
+        //why not restart the listening mode?
+        //BluetoothChatService.this.start();
     }
 
     /**
@@ -299,6 +365,7 @@ public class BluetoothChatService {
      * like a server-side client. It runs until a connection is accepted
      * (or until cancelled).
      */
+/*
     private class AcceptThread extends Thread {
         // The local server socket
         private final BluetoothServerSocket mmServerSocket;
@@ -378,7 +445,53 @@ public class BluetoothChatService {
             }
         }
     }
+*/
+    private class AcceptThread extends Thread {
+        BluetoothServerSocket serverSocket = null;
+        // The local server socket
+        private String mSocketType;
+        
+        public AcceptThread(boolean secure) {
+            mSocketType = secure ? "Secure" : "Insecure";
+        }
 
+        public void run() {
+            if (D) Log.d(TAG, "BEGIN mAcceptThread" + this);
+            setName("AcceptThread");
+            BluetoothSocket socket = null;
+            try {
+                // Listen for all 7 UUIDs
+                for (int i = 0; i < 7; i++) {
+                    //TODO: this defaults to insecure
+//                    if (secure) {
+//                        serverSocket = mAdapter.listenUsingRfcommWithServiceRecord(NAME, mUuids.get(i));
+//                    } else {
+                        serverSocket = mAdapter.listenUsingInsecureRfcommWithServiceRecord(
+                            NAME_INSECURE, MY_UUID_INSECURE);
+//                    }
+                    socket = serverSocket.accept();
+                    if (socket != null) {
+                        String address = socket.getRemoteDevice().getAddress();
+                        mSockets.add(socket);
+                        mDeviceAddresses.add(address);
+                        connected(socket, socket.getRemoteDevice(), mSocketType);
+                    }	                    
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "accept() failed", e);
+            }
+            if (D) Log.i(TAG, "END mAcceptThread");
+        }
+
+        public void cancel() {
+            if (D) Log.d(TAG, "cancel " + this);
+            try {
+                serverSocket.close();
+            } catch (IOException e) {
+                Log.e(TAG, "close() of server failed", e);
+            }
+        }
+    }
 
     /**
      * This thread runs while attempting to make an outgoing connection
@@ -388,22 +501,24 @@ public class BluetoothChatService {
     private class ConnectThread extends Thread {
         private final BluetoothSocket mmSocket;
         private final BluetoothDevice mmDevice;
+        private UUID tempUuid; 
         private String mSocketType;
 
-        public ConnectThread(BluetoothDevice device, boolean secure) {
+        public ConnectThread(BluetoothDevice device, boolean secure, UUID targetUuid) {
             mmDevice = device;
             BluetoothSocket tmp = null;
             mSocketType = secure ? "Secure" : "Insecure";
+            tempUuid = targetUuid;
 
             // Get a BluetoothSocket for a connection with the
             // given BluetoothDevice
             try {
                 if (secure) {
                     tmp = device.createRfcommSocketToServiceRecord(
-                            MY_UUID_SECURE);
+                            tempUuid);
                 } else {
                     tmp = device.createInsecureRfcommSocketToServiceRecord(
-                            MY_UUID_INSECURE);
+                            tempUuid);
                 }
             } catch (IOException e) {
                 Log.e(TAG, "Socket Type: " + mSocketType + "create() failed", e);
@@ -425,6 +540,9 @@ public class BluetoothChatService {
                 // successful connection or an exception
                 mmSocket.connect();
             } catch (IOException e) {
+                if (tempUuid.toString().contentEquals(mUuids.get(6).toString())) {
+                    connectionFailed();
+            	}
                 // Close the socket
                 try {
                     mmSocket.close();
@@ -488,7 +606,7 @@ public class BluetoothChatService {
             int bytes;
 
             // Keep listening to the InputStream while connected
-            while (mState == STATE_CONNECTED) {
+            while (true) {
                 try {
                     // Read from the InputStream
                     bytes = mmInStream.read(buffer);
