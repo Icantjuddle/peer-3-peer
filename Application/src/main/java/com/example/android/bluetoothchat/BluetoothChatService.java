@@ -323,6 +323,8 @@ public class BluetoothChatService {
      * Indicate that the connection attempt failed and notify the UI Activity.
      */
     private void connectionFailed() {
+        //TODO: jennabarton - confirm this is what we want
+        setState(STATE_LISTEN);
         // Commented out, because when trying to connect to all 7 UUIDs, failures will occur
         // for each that was tried and unsuccessful, resulting in multiple failure toasts.
         // // Send a failure message back to the Activity
@@ -333,8 +335,8 @@ public class BluetoothChatService {
         // mHandler.sendMessage(msg);
 
         // mState = STATE_NONE;
-        // // Update UI title
-        // updateUserInterfaceTitle();
+        // Update UI title
+        updateUserInterfaceTitle();
 
         // // Start the service over to restart listening mode
         // BluetoothChatService.this.start();
@@ -469,13 +471,15 @@ public class BluetoothChatService {
                         serverSocket = mAdapter.listenUsingInsecureRfcommWithServiceRecord(
                             NAME_INSECURE, MY_UUID_INSECURE);
 //                    }
+                    if (D) Log.i(TAG, "Try accept for thread " + i);
                     socket = serverSocket.accept();
                     if (socket != null) {
                         String address = socket.getRemoteDevice().getAddress();
                         mSockets.add(socket);
                         mDeviceAddresses.add(address);
                         connected(socket, socket.getRemoteDevice(), mSocketType);
-                    }	                    
+                    }
+                    if (D) Log.i(TAG, "Passed accept for thread " + i);
                 }
             } catch (IOException e) {
                 Log.e(TAG, "accept() failed", e);
@@ -538,8 +542,11 @@ public class BluetoothChatService {
             try {
                 // This is a blocking call and will only return on a
                 // successful connection or an exception
+                if (D) Log.i(TAG, "Try connect for socket");
                 mmSocket.connect();
+                if (D) Log.i(TAG, "Pass connect for socket");
             } catch (IOException e) {
+                if (D) Log.i(TAG, "Unable to connect", e);
                 if (tempUuid.toString().contentEquals(mUuids.get(6).toString())) {
                     connectionFailed();
             	}
